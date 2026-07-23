@@ -367,4 +367,4 @@ void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
 
-void HomeActivity::onCantoOpen() { activityManager.goToCantoLibrary(); }
+void HomeActivity::onCantoOpen() { activityManager.goToCantoHome(); }

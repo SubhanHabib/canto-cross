@@ -93,6 +93,10 @@ class ActivityManager {
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
   void goHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE);
+  // The Canto landing screen (regardless of the start-screen setting).
+  void goToCantoHome();
+  // The CrossPoint home, bypassing the Canto-first routing in goHome().
+  void goToDeviceHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE);
 
   // This will move current activity to stack instead of deleting it
   void pushActivity(std::unique_ptr<Activity>&& activity);
