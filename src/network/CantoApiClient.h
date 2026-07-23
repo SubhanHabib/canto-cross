@@ -6,8 +6,8 @@
  * OPDS/kosync. Currently a single call: article triage (shelf changes).
  *
  * The triage endpoint is a documented follow-up for the Canto server (see
- * docs/canto.md); until it ships, servers answer 404 which is surfaced as
- * UNSUPPORTED so the UI can degrade gracefully.
+ * docs/canto/integration.md); until it ships, servers answer 404 which is
+ * surfaced as UNSUPPORTED so the UI can degrade gracefully.
  */
 class CantoApiClient {
  public:
