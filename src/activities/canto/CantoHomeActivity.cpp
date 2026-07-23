@@ -4,6 +4,7 @@
 #include <HalStorage.h>
 #include <I18n.h>
 
+#include <algorithm>
 #include <cstdio>
 
 #include "CantoSettingsActivity.h"

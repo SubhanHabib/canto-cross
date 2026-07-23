@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "activities/Activity.h"
+#include "components/OptionPopup.h"
 #include "util/ButtonNavigator.h"
 
 /**
@@ -48,6 +49,7 @@ class CantoLibraryActivity final : public Activity {
   std::string serverUrl;  // CANTO_STORE.opdsRootUrl(), resolved on enter
   // When non-empty, onExit silent-restarts into the reader for this path.
   std::string pendingOpenPath;
+  OptionPopup optionPopup;
 
   // Local SD path an entry downloads to (fixed /Canto folder + the same
   // filename derivation the server registers kosync identities for).
@@ -66,6 +68,9 @@ class CantoLibraryActivity final : public Activity {
   void navigateBack();
   void downloadBook(const OpdsEntry& book);
   void openArticle(const std::string& path);
+  // Article-actions popup (triage) for the selected book entry.
+  void showTriagePopup();
+  void performTriage(const std::string& articleId, const char* stateStr);
   void launchSearch();
   void performSearch(const std::string& query);
   bool preventAutoSleep() override { return true; }

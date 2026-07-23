@@ -19,6 +19,7 @@
 #include "components/UITheme.h"
 #include "components/icons/search24.h"
 #include "fontIds.h"
+#include "network/CantoApiClient.h"
 #include "network/HttpDownloader.h"
 #include "util/BookCacheUtils.h"
 #include "util/OpdsFilename.h"
@@ -157,6 +158,8 @@ void CantoLibraryActivity::loop() {
   if (state == BrowserState::DOWNLOADING) return;
 
   if (state == BrowserState::BROWSING) {
+    if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+
     auto activateSelected = [this] {
       if (!entries.empty()) {
         const auto& entry = entries[selectorIndex];
@@ -175,7 +178,11 @@ void CantoLibraryActivity::loop() {
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       navigateBack();
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
-      if (!searchTemplate.empty() && selectorIndex == 0) launchSearch();
+      if (!searchTemplate.empty() && selectorIndex == 0) {
+        launchSearch();
+      } else {
+        showTriagePopup();
+      }
     }
 
     int tx = 0;
@@ -237,6 +244,8 @@ void CantoLibraryActivity::loop() {
 }
 
 void CantoLibraryActivity::render(RenderLock&&) {
+  if (optionPopup.processRender(renderer, mappedInput)) return;
+
   renderer.clearScreen();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
@@ -467,6 +476,47 @@ void CantoLibraryActivity::flushPendingSync() {
   statusMessage = tr(STR_CANTO_SYNCING);
   requestUpdate(true);
   CantoSyncHelper::pushPending(MAX_PUSH_PER_SESSION);
+}
+
+void CantoLibraryActivity::showTriagePopup() {
+  if (entries.empty()) return;
+  const auto& entry = entries[selectorIndex];
+  if (entry.type != OpdsEntryType::BOOK) return;
+
+  const std::string articleId = stripUrnUuid(entry.id);
+  if (articleId.empty()) return;
+
+  // Server shelf states, indexed to match the popup options below.
+  static constexpr const char* STATES[] = {"inbox", "later", "archived"};
+  std::vector<std::string> options;
+  options.reserve(3);
+  options.push_back(tr(STR_CANTO_MOVE_INBOX));
+  options.push_back(tr(STR_CANTO_MOVE_LATER));
+  options.push_back(tr(STR_CANTO_ARCHIVE));
+
+  optionPopup.show(STR_CANTO_ACTIONS, options, 0,
+                   [this, articleId](int idx) { performTriage(articleId, STATES[idx]); });
+  requestUpdate();
+}
+
+void CantoLibraryActivity::performTriage(const std::string& articleId, const char* stateStr) {
+  state = BrowserState::LOADING;
+  statusMessage = tr(STR_CANTO_SYNCING);
+  requestUpdate(true);
+
+  const auto result = CantoApiClient::setArticleState(articleId, stateStr);
+  if (result == CantoApiClient::OK) {
+    // Reload the current shelf so the moved article disappears/reappears.
+    statusMessage = tr(STR_LOADING);
+    requestUpdate(true);
+    fetchFeed(currentPath);
+    return;
+  }
+
+  state = BrowserState::ERROR;
+  errorMessage =
+      result == CantoApiClient::UNSUPPORTED ? tr(STR_CANTO_TRIAGE_UNSUPPORTED) : CantoApiClient::errorString(result);
+  requestUpdate();
 }
 
 void CantoLibraryActivity::launchSearch() {

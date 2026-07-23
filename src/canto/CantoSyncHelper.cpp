@@ -9,6 +9,7 @@
 #include <ProgressMapper.h>
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <vector>
