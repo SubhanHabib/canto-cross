@@ -58,6 +58,8 @@ class CantoLibraryActivity final : public Activity {
   void checkAndConnectWifi();
   void launchWifiSelection();
   void onWifiSelectionComplete(bool connected);
+  // Pushes a bounded batch of pending progress updates at session start.
+  void flushPendingSync();
   void fetchFeed(const std::string& path);
   void releaseEntries();
   void navigateToEntry(const OpdsEntry& entry);

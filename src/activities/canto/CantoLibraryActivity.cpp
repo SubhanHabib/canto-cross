@@ -15,6 +15,7 @@
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
+#include "canto/CantoSyncHelper.h"
 #include "components/UITheme.h"
 #include "components/icons/search24.h"
 #include "fontIds.h"
@@ -32,6 +33,10 @@ constexpr int SEARCH_ICON_MARGIN = 14;
 constexpr int SEARCH_ICON_Y = 15;
 constexpr int DOWNLOAD_PROGRESS_STEP_PERCENT = 5;
 constexpr unsigned long DOWNLOAD_PROGRESS_MIN_UPDATE_MS = 5000;
+
+// Bound the session-start push batch so entering the library stays snappy;
+// the remainder flushes on the next session or via Sync Now.
+constexpr size_t MAX_PUSH_PER_SESSION = 3;
 
 // Fixed download folder. The article index maps these paths to server article
 // UUIDs; keeping every Canto download here keeps that mapping stable.
@@ -279,7 +284,7 @@ void CantoLibraryActivity::render(RenderLock&&) {
   }
 
   const bool selectedIsBook = !entries.empty() && entries[selectorIndex].type == OpdsEntryType::BOOK;
-  const char* confirmLabel = !selectedIsBook                       ? tr(STR_OPEN)
+  const char* confirmLabel = !selectedIsBook                        ? tr(STR_OPEN)
                              : isDownloaded(entries[selectorIndex]) ? tr(STR_CANTO_READ)
                                                                     : tr(STR_DOWNLOAD);
   const char* searchLabel = (!searchTemplate.empty() && selectorIndex == 0) ? tr(STR_SEARCH) : tr(STR_DIR_UP);
@@ -441,12 +446,27 @@ void CantoLibraryActivity::downloadBook(const OpdsEntry& book) {
 }
 
 void CantoLibraryActivity::openArticle(const std::string& path) {
+  if (CANTO_STORE.getAutoSync() && WiFi.status() == WL_CONNECTED) {
+    state = BrowserState::LOADING;
+    statusMessage = tr(STR_CANTO_CHECKING_PROGRESS);
+    requestUpdate(true);
+    // Best-effort: a failed pull still opens the article at its local position.
+    CantoSyncHelper::pullApply(renderer, path);
+  }
   APP_STATE.openEpubPath = path;
   APP_STATE.saveToFile();
   pendingOpenPath = path;
   // Exiting triggers onExit's silent restart into the reader, which also
   // clears the WiFi/TLS heap fragmentation before the EPUB engine starts.
   onGoHome();
+}
+
+void CantoLibraryActivity::flushPendingSync() {
+  if (!CANTO_STORE.getAutoSync()) return;
+  if (CantoSyncHelper::refreshPendingFlags() == 0) return;
+  statusMessage = tr(STR_CANTO_SYNCING);
+  requestUpdate(true);
+  CantoSyncHelper::pushPending(MAX_PUSH_PER_SESSION);
 }
 
 void CantoLibraryActivity::launchSearch() {
@@ -506,6 +526,7 @@ void CantoLibraryActivity::performSearch(const std::string& query) {
 void CantoLibraryActivity::checkAndConnectWifi() {
   if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
     state = BrowserState::LOADING;
+    flushPendingSync();
     statusMessage = tr(STR_LOADING);
     requestUpdate();
     fetchFeed(currentPath);
@@ -525,6 +546,7 @@ void CantoLibraryActivity::launchWifiSelection() {
 void CantoLibraryActivity::onWifiSelectionComplete(const bool connected) {
   if (connected) {
     state = BrowserState::LOADING;
+    flushPendingSync();
     statusMessage = tr(STR_LOADING);
     requestUpdate(true);
     fetchFeed(currentPath);
