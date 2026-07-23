@@ -44,6 +44,18 @@ struct KOReaderProgress {
 };
 
 /**
+ * A kosync server + credential pair, independent of the global KOReader
+ * credential store. Lets other integrations (e.g. the Canto layer) speak the
+ * kosync protocol with their own account without hijacking the user's
+ * KOReader sync identity.
+ */
+struct KOSyncAccount {
+  std::string baseUrl;  // Normalized base URL, no trailing slash
+  std::string username;
+  std::string password;  // Plaintext; the MD5 auth key is derived internally
+};
+
+/**
  * HTTP client for KOReader sync API.
  *
  * Base URL: https://sync.koreader.rocks:443/
@@ -76,6 +88,7 @@ class KOReaderSyncClient {
    * @return OK on success, error code on failure
    */
   static Error authenticate();
+  static Error authenticate(const KOSyncAccount& account);
 
   /**
    * Register a new account on the sync server using the stored credentials
@@ -92,6 +105,8 @@ class KOReaderSyncClient {
    * @return OK on success, NOT_FOUND if no progress exists, error code on failure
    */
   static Error getProgress(const std::string& documentHash, KOReaderProgress& outProgress);
+  static Error getProgress(const KOSyncAccount& account, const std::string& documentHash,
+                           KOReaderProgress& outProgress);
 
   /**
    * Update reading progress for a document.
@@ -99,6 +114,7 @@ class KOReaderSyncClient {
    * @return OK on success, error code on failure
    */
   static Error updateProgress(const KOReaderProgress& progress);
+  static Error updateProgress(const KOSyncAccount& account, const KOReaderProgress& progress);
 
   /**
    * Get human-readable error message.

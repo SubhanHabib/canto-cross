@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <Logging.h>
+#include <MD5Builder.h>
 #include <SecureHttpClient.h>
 #include <base64.h>
 
@@ -24,16 +25,35 @@ constexpr char DEVICE_ID[] = "crosspoint-reader";
 // heap does not fall through into a failed TLS allocation path.
 constexpr uint32_t MIN_HEAP_FOR_TLS = 55000;
 
+// MD5 of the account password — the kosync x-auth-key.
+std::string md5Hex(const std::string& input) {
+  if (input.empty()) {
+    return "";
+  }
+  MD5Builder md5;
+  md5.begin();
+  md5.add(input.c_str());
+  md5.calculate();
+  return md5.toString().c_str();
+}
+
 // Apply the shared KOSync auth headers after begin(). x-auth-* is the native
 // KOSync scheme; Basic auth is added for Calibre-Web-Automated compatibility.
-void applyAuthHeaders(freeink::SecureHttpClient& http) {
+void applyAuthHeaders(freeink::SecureHttpClient& http, const KOSyncAccount& account) {
   http.addHeader("Accept", "application/vnd.koreader.v1+json");
-  http.addHeader("x-auth-user", KOREADER_STORE.getUsername());
-  http.addHeader("x-auth-key", KOREADER_STORE.getMd5Password());
-  const std::string credentials = KOREADER_STORE.getUsername() + ":" + KOREADER_STORE.getPassword();
+  http.addHeader("x-auth-user", account.username);
+  http.addHeader("x-auth-key", md5Hex(account.password));
+  const std::string credentials = account.username + ":" + account.password;
   const String encoded = base64::encode(credentials.c_str());
   http.addHeader("Authorization", std::string("Basic ") + encoded.c_str());
 }
+
+// The global KOReader identity as an explicit account.
+KOSyncAccount accountFromStore() {
+  return KOSyncAccount{KOREADER_STORE.getBaseUrl(), KOREADER_STORE.getUsername(), KOREADER_STORE.getPassword()};
+}
+
+bool hasCredentials(const KOSyncAccount& account) { return !account.username.empty() && !account.password.empty(); }
 
 // True when free heap is too low to risk a TLS handshake.
 bool insufficientHeap() {
@@ -48,14 +68,16 @@ bool insufficientHeap() {
 }
 }  // namespace
 
-KOReaderSyncClient::Error KOReaderSyncClient::authenticate() {
+KOReaderSyncClient::Error KOReaderSyncClient::authenticate() { return authenticate(accountFromStore()); }
+
+KOReaderSyncClient::Error KOReaderSyncClient::authenticate(const KOSyncAccount& account) {
   lastHttpCode = 0;
-  if (!KOREADER_STORE.hasCredentials()) {
+  if (!hasCredentials(account)) {
     LOG_DBG("KOSync", "No credentials configured");
     return NO_CREDENTIALS;
   }
 
-  const std::string url = KOREADER_STORE.getBaseUrl() + "/users/auth";
+  const std::string url = account.baseUrl + "/users/auth";
   LOG_DBG("KOSync", "Authenticating: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
   if (insufficientHeap()) return LOW_MEMORY;
 
@@ -65,7 +87,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::authenticate() {
     LOG_ERR("KOSync", "Bad URL: %s", url.c_str());
     return NETWORK_ERROR;
   }
-  applyAuthHeaders(http);
+  applyAuthHeaders(http, account);
   const int httpCode = http.GET();
   http.end();
   lastHttpCode = httpCode;
@@ -80,18 +102,19 @@ KOReaderSyncClient::Error KOReaderSyncClient::authenticate() {
 
 KOReaderSyncClient::Error KOReaderSyncClient::createUser() {
   lastHttpCode = 0;
-  if (!KOREADER_STORE.hasCredentials()) {
+  const KOSyncAccount account = accountFromStore();
+  if (!hasCredentials(account)) {
     LOG_DBG("KOSync", "No credentials configured");
     return NO_CREDENTIALS;
   }
 
-  const std::string url = KOREADER_STORE.getBaseUrl() + "/users/create";
+  const std::string url = account.baseUrl + "/users/create";
   LOG_DBG("KOSync", "Creating account: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
   if (insufficientHeap()) return LOW_MEMORY;
 
   JsonDocument doc;
-  doc["username"] = KOREADER_STORE.getUsername();
-  doc["password"] = KOREADER_STORE.getMd5Password();
+  doc["username"] = account.username;
+  doc["password"] = md5Hex(account.password);
   std::string body;
   serializeJson(doc, body);
 
@@ -117,13 +140,18 @@ KOReaderSyncClient::Error KOReaderSyncClient::createUser() {
 
 KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string& documentHash,
                                                           KOReaderProgress& outProgress) {
+  return getProgress(accountFromStore(), documentHash, outProgress);
+}
+
+KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const KOSyncAccount& account, const std::string& documentHash,
+                                                          KOReaderProgress& outProgress) {
   lastHttpCode = 0;
-  if (!KOREADER_STORE.hasCredentials()) {
+  if (!hasCredentials(account)) {
     LOG_DBG("KOSync", "No credentials configured");
     return NO_CREDENTIALS;
   }
 
-  const std::string url = KOREADER_STORE.getBaseUrl() + "/syncs/progress/" + documentHash;
+  const std::string url = account.baseUrl + "/syncs/progress/" + documentHash;
   LOG_DBG("KOSync", "Getting progress: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
   if (insufficientHeap()) return LOW_MEMORY;
 
@@ -133,7 +161,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string& doc
     LOG_ERR("KOSync", "Bad URL: %s", url.c_str());
     return NETWORK_ERROR;
   }
-  applyAuthHeaders(http);
+  applyAuthHeaders(http, account);
   const int httpCode = http.GET();
   lastHttpCode = httpCode;
 
@@ -190,13 +218,18 @@ KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string& doc
 }
 
 KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOReaderProgress& progress) {
+  return updateProgress(accountFromStore(), progress);
+}
+
+KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOSyncAccount& account,
+                                                             const KOReaderProgress& progress) {
   lastHttpCode = 0;
-  if (!KOREADER_STORE.hasCredentials()) {
+  if (!hasCredentials(account)) {
     LOG_DBG("KOSync", "No credentials configured");
     return NO_CREDENTIALS;
   }
 
-  const std::string url = KOREADER_STORE.getBaseUrl() + "/syncs/progress";
+  const std::string url = account.baseUrl + "/syncs/progress";
   LOG_DBG("KOSync", "Updating progress: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
   if (insufficientHeap()) return LOW_MEMORY;
 
@@ -237,7 +270,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOReaderProgr
     LOG_ERR("KOSync", "Bad URL: %s", url.c_str());
     return NETWORK_ERROR;
   }
-  applyAuthHeaders(http);
+  applyAuthHeaders(http, account);
   http.addHeader("Content-Type", "application/json");
   const int httpCode = http.sendRequest("PUT", body);
   http.end();
