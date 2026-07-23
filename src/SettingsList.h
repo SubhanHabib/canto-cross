@@ -11,6 +11,7 @@
 #include <iterator>
 #include <vector>
 
+#include "CantoStore.h"
 #include "CrossPointSettings.h"
 #include "KOReaderCredentialStore.h"
 #include "activities/settings/SettingsActivity.h"
@@ -311,6 +312,44 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
               KOREADER_STORE.saveToFile();
             },
             "koSyncBehavior", StrId::STR_KOREADER_SYNC),
+        // --- Canto Reader (web-only, uses CantoStore) ---
+        SettingInfo::DynamicString(
+            StrId::STR_CANTO_SERVER_URL, [] { return CANTO_STORE.getServerUrl(); },
+            [](const std::string& v) {
+              CANTO_STORE.setServerUrl(v);
+              CANTO_STORE.saveToFile();
+            },
+            "cantoServerUrl", StrId::STR_CANTO),
+        SettingInfo::DynamicString(
+            StrId::STR_USERNAME, [] { return CANTO_STORE.getUsername(); },
+            [](const std::string& v) {
+              CANTO_STORE.setCredentials(v, CANTO_STORE.getPassword());
+              CANTO_STORE.saveToFile();
+            },
+            "cantoUsername", StrId::STR_CANTO),
+        SettingInfo::DynamicString(
+            StrId::STR_PASSWORD, [] { return CANTO_STORE.getPassword(); },
+            [](const std::string& v) {
+              CANTO_STORE.setCredentials(CANTO_STORE.getUsername(), v);
+              CANTO_STORE.saveToFile();
+            },
+            "cantoPassword", StrId::STR_CANTO),
+        SettingInfo::DynamicEnum(
+            StrId::STR_CANTO_START_SCREEN, {StrId::STR_STATE_OFF, StrId::STR_STATE_ON},
+            [] { return static_cast<uint8_t>(CANTO_STORE.getEnabled()); },
+            [](uint8_t v) {
+              CANTO_STORE.setEnabled(v != 0);
+              CANTO_STORE.saveToFile();
+            },
+            "cantoEnabled", StrId::STR_CANTO),
+        SettingInfo::DynamicEnum(
+            StrId::STR_CANTO_AUTO_SYNC, {StrId::STR_STATE_OFF, StrId::STR_STATE_ON},
+            [] { return static_cast<uint8_t>(CANTO_STORE.getAutoSync()); },
+            [](uint8_t v) {
+              CANTO_STORE.setAutoSync(v != 0);
+              CANTO_STORE.saveToFile();
+            },
+            "cantoAutoSync", StrId::STR_CANTO),
         // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
         SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,
                             "statusBarChapterPageCount", StrId::STR_CUSTOMISE_STATUS_BAR),
