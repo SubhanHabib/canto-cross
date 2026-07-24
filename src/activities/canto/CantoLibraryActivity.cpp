@@ -494,7 +494,7 @@ void CantoLibraryActivity::showTriagePopup() {
   options.push_back(tr(STR_CANTO_MOVE_LATER));
   options.push_back(tr(STR_CANTO_ARCHIVE));
 
-  optionPopup.show(STR_CANTO_ACTIONS, options, 0,
+  optionPopup.show(StrId::STR_CANTO_ACTIONS, options, 0,
                    [this, articleId](int idx) { performTriage(articleId, STATES[idx]); });
   requestUpdate();
 }
