@@ -55,8 +55,15 @@ KOSyncAccount accountFromStore() {
 
 bool hasCredentials(const KOSyncAccount& account) { return !account.username.empty() && !account.password.empty(); }
 
-// True when free heap is too low to risk a TLS handshake.
-bool insufficientHeap() {
+// True when free heap is too low to risk a TLS handshake. The floor only
+// applies to https:// URLs: a plain-http request performs no handshake and
+// needs far less contiguous heap, so gating it on the TLS floor would wrongly
+// block syncs to a plain-http server (e.g. a LAN dev server) whenever Wi-Fi has
+// fragmented the largest free block below MIN_HEAP_FOR_TLS.
+bool insufficientHeap(const std::string& url) {
+  if (url.rfind("https://", 0) != 0) {
+    return false;  // plain http: no TLS handshake, no contiguous-heap floor
+  }
   const uint32_t freeHeap = ESP.getFreeHeap();
   const uint32_t maxAllocHeap = ESP.getMaxAllocHeap();
   if (freeHeap < MIN_HEAP_FOR_TLS || maxAllocHeap < MIN_HEAP_FOR_TLS) {
@@ -79,7 +86,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::authenticate(const KOSyncAccount& 
 
   const std::string url = account.baseUrl + "/users/auth";
   LOG_DBG("KOSync", "Authenticating: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
-  if (insufficientHeap()) return LOW_MEMORY;
+  if (insufficientHeap(url)) return LOW_MEMORY;
 
   freeink::SecureHttpClient http;
   http.setInsecure();
@@ -110,7 +117,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::createUser() {
 
   const std::string url = account.baseUrl + "/users/create";
   LOG_DBG("KOSync", "Creating account: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
-  if (insufficientHeap()) return LOW_MEMORY;
+  if (insufficientHeap(url)) return LOW_MEMORY;
 
   JsonDocument doc;
   doc["username"] = account.username;
@@ -153,7 +160,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const KOSyncAccount& a
 
   const std::string url = account.baseUrl + "/syncs/progress/" + documentHash;
   LOG_DBG("KOSync", "Getting progress: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
-  if (insufficientHeap()) return LOW_MEMORY;
+  if (insufficientHeap(url)) return LOW_MEMORY;
 
   freeink::SecureHttpClient http;
   http.setInsecure();
@@ -231,7 +238,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOSyncAccount
 
   const std::string url = account.baseUrl + "/syncs/progress";
   LOG_DBG("KOSync", "Updating progress: %s (heap: %u)", url.c_str(), (unsigned)ESP.getFreeHeap());
-  if (insufficientHeap()) return LOW_MEMORY;
+  if (insufficientHeap(url)) return LOW_MEMORY;
 
   // Build JSON body
   JsonDocument doc;

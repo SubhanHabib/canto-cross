@@ -14,7 +14,12 @@ namespace {
 // Same conservative TLS heap floor as KOReaderSyncClient.
 constexpr uint32_t MIN_HEAP_FOR_TLS = 55000;
 
-bool insufficientHeap() {
+// The TLS floor only applies to https:// URLs; a plain-http request performs no
+// handshake and needs far less contiguous heap (see KOReaderSyncClient).
+bool insufficientHeap(const std::string& url) {
+  if (url.rfind("https://", 0) != 0) {
+    return false;  // plain http: no TLS handshake, no contiguous-heap floor
+  }
   const uint32_t freeHeap = ESP.getFreeHeap();
   const uint32_t maxAllocHeap = ESP.getMaxAllocHeap();
   if (freeHeap < MIN_HEAP_FOR_TLS || maxAllocHeap < MIN_HEAP_FOR_TLS) {
@@ -56,7 +61,7 @@ CantoApiClient::Error CantoApiClient::setArticleState(const std::string& article
 
   const std::string url = CANTO_STORE.getBaseUrl() + "/api/xt/articles/" + articleId + "/state";
   LOG_DBG("CANTO", "Triage: %s -> %s (heap: %u)", url.c_str(), state, (unsigned)ESP.getFreeHeap());
-  if (insufficientHeap()) return LOW_MEMORY;
+  if (insufficientHeap(url)) return LOW_MEMORY;
 
   JsonDocument doc;
   doc["state"] = state;
