@@ -55,6 +55,13 @@ KOSyncAccount accountFromStore() {
 
 bool hasCredentials(const KOSyncAccount& account) { return !account.username.empty() && !account.password.empty(); }
 
+// Discards the response body as it streams in. For status-only requests,
+// buffering the body (the default sendRequest overload) can abort() on OOM
+// when a server answers with a large HTML error page: std::string::append
+// grows via the throwing operator new, which -fno-exceptions app code cannot
+// catch (observed on-device against a dev server's 404 page).
+bool discardBody(const uint8_t*, size_t) { return true; }
+
 // True when free heap is too low to risk a TLS handshake. The floor only
 // applies to https:// URLs: a plain-http request performs no handshake and
 // needs far less contiguous heap, so gating it on the TLS floor would wrongly
@@ -95,7 +102,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::authenticate(const KOSyncAccount& 
     return NETWORK_ERROR;
   }
   applyAuthHeaders(http, account);
-  const int httpCode = http.GET();
+  const int httpCode = http.GET(discardBody);  // status-only; see discardBody
   http.end();
   lastHttpCode = httpCode;
 
@@ -133,7 +140,8 @@ KOReaderSyncClient::Error KOReaderSyncClient::createUser() {
   }
   http.addHeader("Accept", "application/vnd.koreader.v1+json");
   http.addHeader("Content-Type", "application/json");
-  const int httpCode = http.sendRequest("POST", body);
+  const int httpCode =  // status-only; see discardBody
+      http.sendRequest("POST", reinterpret_cast<const uint8_t*>(body.data()), body.size(), discardBody);
   http.end();
   lastHttpCode = httpCode;
 
@@ -279,7 +287,8 @@ KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOSyncAccount
   }
   applyAuthHeaders(http, account);
   http.addHeader("Content-Type", "application/json");
-  const int httpCode = http.sendRequest("PUT", body);
+  const int httpCode =  // status-only; see discardBody
+      http.sendRequest("PUT", reinterpret_cast<const uint8_t*>(body.data()), body.size(), discardBody);
   http.end();
   lastHttpCode = httpCode;
 

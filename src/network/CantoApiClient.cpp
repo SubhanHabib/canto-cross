@@ -39,6 +39,13 @@ std::string md5Hex(const std::string& input) {
   return md5.toString().c_str();
 }
 
+// Discards the response body as it streams in. Only the status code matters
+// here, and buffering the body (the default sendRequest overload) can abort()
+// on OOM when a server answers with a large HTML error page: std::string's
+// append grows via the throwing operator new, which -fno-exceptions app code
+// cannot catch (observed on-device against a dev server's 404 page).
+bool discardBody(const uint8_t*, size_t) { return true; }
+
 // Same device auth headers the server's other /api/xt/* endpoints accept.
 void applyAuthHeaders(freeink::SecureHttpClient& http) {
   http.addHeader("x-auth-user", CANTO_STORE.getUsername());
@@ -76,7 +83,8 @@ CantoApiClient::Error CantoApiClient::setArticleState(const std::string& article
   }
   applyAuthHeaders(http);
   http.addHeader("Content-Type", "application/json");
-  const int httpCode = http.sendRequest("POST", body);
+  const int httpCode =  // status-only; see discardBody
+      http.sendRequest("POST", reinterpret_cast<const uint8_t*>(body.data()), body.size(), discardBody);
   http.end();
   lastHttpCode = httpCode;
 
