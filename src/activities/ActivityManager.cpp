@@ -5,10 +5,13 @@
 
 #include <algorithm>
 
+#include "CantoStore.h"
 #include "OpdsServerStore.h"
 #include "boot_sleep/BootActivity.h"
 #include "boot_sleep/SleepActivity.h"
 #include "browser/OpdsBookBrowserActivity.h"
+#include "canto/CantoHomeActivity.h"
+#include "canto/CantoLibraryActivity.h"
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
@@ -208,6 +211,10 @@ void ActivityManager::goToBrowser() {
   }
 }
 
+void ActivityManager::goToCantoLibrary() {
+  replaceActivity(std::make_unique<CantoLibraryActivity>(renderer, mappedInput));
+}
+
 void ActivityManager::goToReader(std::string path) {
   replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path)));
 }
@@ -226,18 +233,41 @@ void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::
 void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
   if (initialMenuItem == HomeMenuItem::NONE && currentActivity) {
     const auto& activityName = currentActivity->name;
+    // Canto activities always land back on the Canto home when it is the
+    // configured start screen (their device-home row highlight applies only
+    // when Canto is reached from the CrossPoint home).
+    if (CANTO_STORE.isEnabled() && (activityName == "CantoLibrary" || activityName == "CantoSync" ||
+                                    activityName == "CantoSettings" || activityName == "CantoAuth")) {
+      goToCantoHome();
+      return;
+    }
     if (activityName == "FileBrowser") {
       initialMenuItem = HomeMenuItem::FILE_BROWSER;
     } else if (activityName == "RecentBooks") {
       initialMenuItem = HomeMenuItem::RECENTS;
     } else if (activityName == "OpdsBookBrowser") {
       initialMenuItem = HomeMenuItem::OPDS_BROWSER;
+    } else if (activityName == "CantoLibrary") {
+      initialMenuItem = HomeMenuItem::CANTO;
     } else if (activityName == "CrossPointWebServer") {
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;
     } else if (activityName == "Settings") {
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
     }
   }
+  // Canto-first landing: a plain go-home (boot, reader home gesture,
+  // pop-to-empty) lands on the Canto home when it is enabled; device-home
+  // children (inferred above) keep returning to the CrossPoint home.
+  if (initialMenuItem == HomeMenuItem::NONE && CANTO_STORE.isEnabled()) {
+    goToCantoHome();
+    return;
+  }
+  replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem));
+}
+
+void ActivityManager::goToCantoHome() { replaceActivity(std::make_unique<CantoHomeActivity>(renderer, mappedInput)); }
+
+void ActivityManager::goToDeviceHome(HomeMenuItem initialMenuItem) {
   replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem));
 }
 void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
